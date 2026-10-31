@@ -284,3 +284,250 @@ details[open] summary::after { content: " ▴"; }
 #source a { color: var(--muted); }
 
 @media (min-width: 420px) { .grid { gap: 12px; } }
+
+/* ── 주제별 꾸밈: 해외 출국 — 비행기 · 여권 ─────────
+   app.js 의 THEMES 가 body[data-theme=travel] 을 붙인다.
+   문항·결과 화면에만 씌우고, 시작 화면과 다른 주제는 그대로. */
+.sky { display: none; }
+
+body[data-theme=travel] {
+  --bg: #0b1f3a;
+  --bg2: #1b3f6b;
+  --card: #132a4d;
+  --line: #2c4a72;
+  --ink: #f3f6fc;
+  --muted: #a9bad3;
+  --brand: #e3b955;
+  --ok: #3fbf8f;
+  --miss: #f0707f;
+  --paper: #f5efdf;
+  --paper-ink: #1d2b45;
+  --paper-line: #d9cfb6;
+  --stamp: #c8102e;
+  --plane-gold: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23e3b955' transform='rotate(90 12 12)' d='M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z'/></svg>");
+  --plane-white: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23ffffff' transform='rotate(90 12 12)' d='M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z'/></svg>");
+  --plane-ink: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%231d2b45' transform='rotate(90 12 12)' d='M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z'/></svg>");
+  background: linear-gradient(180deg, #0b1f3a 0%, #1b3f6b 65%, #3a6ea5 100%) fixed;
+}
+html:has(body[data-theme=travel]) { background: #0b1f3a; }
+body[data-theme=travel] #app { position: relative; z-index: 1; }
+
+/* 하늘 — 구름이 흘러가고 비행기가 가끔 가로지른다 */
+body[data-theme=travel] .sky {
+  display: block; position: fixed; inset: 0; overflow: hidden;
+  pointer-events: none; z-index: 0;
+}
+.sky .cloud {
+  position: absolute; left: -320px; width: 280px; height: 90px;
+  background: radial-gradient(closest-side, rgba(255,255,255,.16), transparent);
+  animation: drift linear infinite;
+}
+.sky .c1 { top: 10%; animation-duration: 40s; animation-delay: -8s; }
+.sky .c2 { top: 46%; width: 380px; height: 120px; animation-duration: 58s; animation-delay: -30s; }
+.sky .c3 { top: 78%; animation-duration: 47s; animation-delay: -20s; }
+@keyframes drift { to { transform: translateX(calc(100vw + 640px)); } }
+
+.sky .plane {
+  position: absolute; top: 26%; left: -60px; width: 34px; height: 34px;
+  background: var(--plane-white) center / contain no-repeat; opacity: .55;
+  animation: fly 18s linear infinite;
+}
+/* 비행운 */
+.sky .plane::before {
+  content: ""; position: absolute; right: 85%; top: 50%; width: 180px; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.45));
+}
+@keyframes fly {
+  0%   { transform: translate(0, 60px) rotate(-6deg); }
+  55%  { transform: translate(calc(100vw + 260px), -40px) rotate(-6deg); }
+  100% { transform: translate(calc(100vw + 260px), -40px) rotate(-6deg); }
+}
+@keyframes bob { 50% { transform: translateY(-3px); } }
+
+/* 문항 — 진행 막대가 항로가 되고, 비행기가 도착지로 간다 */
+body[data-theme=travel] #topic-name::before {
+  content: "BOARDING PASS · "; color: var(--brand); letter-spacing: 1.5px; font-weight: 700;
+}
+body[data-theme=travel] .progress {
+  position: relative; height: 0; overflow: visible; background: none; border-radius: 0;
+  border-top: 2px dashed rgba(255,255,255,.3); margin: 20px 14px 0 0;
+}
+/* 도착 표시 */
+body[data-theme=travel] .progress::after {
+  content: ""; position: absolute; right: -14px; top: -8px; width: 10px; height: 10px;
+  border: 2px solid var(--brand); border-radius: 50%;
+}
+body[data-theme=travel] #progress-bar {
+  position: relative; height: 2px; margin-top: -2px; background: var(--brand);
+  transition: width .7s cubic-bezier(.22,1,.36,1);
+}
+body[data-theme=travel] #progress-bar::after {
+  content: ""; position: absolute; right: -14px; top: -14px; width: 28px; height: 28px;
+  background: var(--plane-gold) center / contain no-repeat;
+  animation: bob 2.4s ease-in-out infinite;
+}
+body[data-theme=travel] #q-count::before { content: "GATE "; letter-spacing: 1px; }
+
+/* 보기 — 양옆에 반달 홈이 파인 탑승권 */
+body[data-theme=travel] .choice {
+  position: relative; border: 0; border-radius: 10px; color: var(--paper-ink);
+  padding: 16px 18px 16px 56px;
+  background:
+    linear-gradient(var(--paper-line) 50%, transparent 0) 44px 0 / 1.5px 8px repeat-y,
+    var(--paper);
+  -webkit-mask:
+    radial-gradient(circle 8px at left center, #0000 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle 8px at right center, #0000 98%, #000) right / 51% 100% no-repeat;
+  mask:
+    radial-gradient(circle 8px at left center, #0000 98%, #000) left / 51% 100% no-repeat,
+    radial-gradient(circle 8px at right center, #0000 98%, #000) right / 51% 100% no-repeat;
+  transition: transform .15s ease;
+}
+body[data-theme=travel] .choice::before {
+  content: ""; position: absolute; left: 14px; top: 50%; width: 20px; height: 20px;
+  margin-top: -10px; background: var(--plane-ink) center / contain no-repeat; opacity: .45;
+}
+body[data-theme=travel] .choice:hover { transform: translateX(3px); }
+body[data-theme=travel] .choice[aria-pressed="true"] {
+  background:
+    linear-gradient(var(--paper-line) 50%, transparent 0) 44px 0 / 1.5px 8px repeat-y,
+    #fff3c4;
+}
+body[data-theme=travel] .choice[aria-pressed="true"]::before { opacity: 1; }
+/* 고르면 도장이 쾅 */
+body[data-theme=travel] .choice[aria-pressed="true"]::after {
+  content: "선택"; position: absolute; right: 18px; top: 50%; margin-top: -13px;
+  border: 2px solid var(--stamp); border-radius: 6px; padding: 0 7px;
+  color: var(--stamp); font-size: 12px; line-height: 22px; letter-spacing: 1px;
+  opacity: .85; transform: rotate(-12deg);
+  animation: stamp .35s cubic-bezier(.3,1.6,.5,1) both;
+}
+@keyframes stamp {
+  0%   { transform: rotate(-12deg) scale(2.4); opacity: 0; }
+  100% { transform: rotate(-12deg) scale(1);   opacity: .85; }
+}
+body[data-theme=travel] .primary:not(:disabled) { color: var(--bg); }
+
+/* 결과 — 점수는 여권 면, 등급은 입국 도장 */
+body[data-theme=travel] .score-card {
+  border: 0; color: var(--paper-ink);
+  background:
+    repeating-radial-gradient(circle at 50% 130%, transparent 0 9px, rgba(29,43,69,.06) 9px 10px),
+    var(--paper);
+  box-shadow: 0 10px 30px rgba(0,0,0,.3);
+  transform-origin: left;
+  animation: open-passport .6s cubic-bezier(.22,1,.36,1) both;
+}
+body[data-theme=travel] .score-card::before {
+  content: "PASSPORT · 여권"; display: block; margin-bottom: 12px;
+  font-size: 11px; font-weight: 700; letter-spacing: 3px; color: #8a7d5c;
+}
+body[data-theme=travel] .score span { color: #6b7489; }
+body[data-theme=travel] .grade-emoji { animation: bob 2.4s ease-in-out infinite; }
+body[data-theme=travel] .grade {
+  display: inline-block; margin-top: 8px; padding: 2px 16px;
+  border: 3px double var(--stamp); border-radius: 10px; color: var(--stamp);
+  opacity: .85; transform: rotate(-6deg);
+  animation: stamp-grade .45s .5s cubic-bezier(.3,1.6,.5,1) both;
+}
+@keyframes stamp-grade {
+  0%   { transform: rotate(-6deg) scale(2.4); opacity: 0; }
+  100% { transform: rotate(-6deg) scale(1);   opacity: .85; }
+}
+@keyframes open-passport {
+  from { transform: perspective(800px) rotateY(-70deg); opacity: 0; }
+  to   { transform: perspective(800px) rotateY(0);      opacity: 1; }
+}
+
+body[data-theme=travel] .ai { background: linear-gradient(135deg, #1d3d68, #132a4d); }
+/* 문항 카드 — 행선지마다 색이 다른 엽서. 위에는 항공편 띠, 오른쪽 위에는 우표.
+   카드 안은 크림색 종이라서 글자·알약 색을 종이에 맞게 다시 정한다. */
+body[data-theme=travel] .card {
+  --ink: var(--paper-ink);
+  --muted: #6b7489;
+  --line: #d9cfb6;
+  --ok: #1f8a5f;
+  --miss: #d23c55;
+  --c1: #4f7cff; --c2: #8ec5ff; --dest: "🗓️"; --route: "FLIGHT 01 · ICN → 2025";
+  position: relative; overflow: hidden; color: var(--ink);
+  border: 0; border-radius: 14px; padding: 60px 17px 16px;
+  background:
+    repeating-linear-gradient(45deg, transparent 0 14px, rgba(29,43,69,.025) 14px 15px),
+    var(--paper);
+  box-shadow: 0 8px 24px rgba(0,0,0,.28);
+  animation: land .5s cubic-bezier(.22,1,.36,1) both;
+}
+body[data-theme=travel] .card:nth-child(2) { --c1: #0fa3a3; --c2: #5fd3b3; --dest: "🌏"; --route: "FLIGHT 02 · ICN → ?"; }
+body[data-theme=travel] .card:nth-child(3) { --c1: #ff7a59; --c2: #ffb36b; --dest: "🧳"; --route: "FLIGHT 03 · ICN → TOP 3"; }
+body[data-theme=travel] .card:nth-child(4) { --c1: #8b5cf6; --c2: #f472b6; --dest: "🏰"; --route: "FLIGHT 04 · ICN → EUROPE"; }
+body[data-theme=travel] .card:nth-child(5) { --c1: #06b6d4; --c2: #facc15; --dest: "🏝️"; --route: "FLIGHT 05 · ICN → SOUTHEAST ASIA"; }
+/* 항공편 띠 */
+body[data-theme=travel] .card::before {
+  content: var(--route); position: absolute; top: 0; left: 0; right: 0; height: 40px;
+  padding: 0 17px; line-height: 40px; color: #fff;
+  font-size: 11.5px; font-weight: 800; letter-spacing: 1.5px;
+  background: linear-gradient(90deg, var(--c1), var(--c2));
+  border-bottom: 2px dashed rgba(255,255,255,.7);
+}
+/* 우표 — 살랑살랑 흔들린다 */
+body[data-theme=travel] .card::after {
+  content: var(--dest); position: absolute; top: 8px; right: 14px;
+  width: 44px; height: 50px; display: grid; place-items: center; font-size: 24px;
+  background: #fff; border: 3px dotted var(--c1); border-radius: 3px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.18);
+  transform: rotate(6deg); animation: sway 3.2s ease-in-out infinite;
+}
+@keyframes sway { 50% { transform: rotate(-3deg) translateY(-2px); } }
+body[data-theme=travel] .card h3 { padding-right: 46px; }
+
+/* 맞히면 착륙, 못 맞히면 다시 이륙 */
+body[data-theme=travel] .react::before { content: "🛫 "; }
+body[data-theme=travel] .react.hit::before { content: "🛬 "; }
+body[data-theme=travel] .react { font-weight: 700; }
+
+/* 정답 알약에 핀 */
+body[data-theme=travel] .pill { background: #fff; }
+body[data-theme=travel] .pill.real::before,
+body[data-theme=travel] .pill.both::before { content: "📍"; margin-right: 2px; }
+body[data-theme=travel] .pill.both { background: rgba(31,138,95,.12); }
+
+/* 해설 — 행선지 색 테이프가 붙은 여행 메모 */
+body[data-theme=travel] .why {
+  position: relative; opacity: 1; margin: 4px 0 12px; padding: 14px 13px 11px;
+  background: #fff8d6; border-radius: 6px; font-size: 13.5px;
+  box-shadow: 0 2px 0 rgba(29,43,69,.06);
+}
+body[data-theme=travel] .why::before {
+  content: ""; position: absolute; top: -6px; left: 50%; width: 64px; height: 14px;
+  margin-left: -32px; transform: rotate(-3deg);
+  background: linear-gradient(90deg, var(--c1), var(--c2)); opacity: .55;
+}
+
+/* 근거 — 지도를 펼치면 일정표 */
+body[data-theme=travel] details { border-top: 1px dashed var(--line); }
+body[data-theme=travel] summary {
+  display: inline-block; padding: 5px 12px; border-radius: 99px;
+  background: linear-gradient(90deg, var(--c1), var(--c2)); color: #fff; font-weight: 700;
+  transition: transform .15s ease;
+}
+body[data-theme=travel] summary::before { content: "🗺️ "; }
+body[data-theme=travel] summary:hover { transform: translateY(-1px); }
+body[data-theme=travel] .basis {
+  background: #fffdf6; border: 1px dashed var(--line); border-radius: 8px;
+  padding: 10px 12px; color: #4a5468;
+  animation: unfold .35s ease both;
+}
+@keyframes unfold { from { opacity: 0; transform: translateY(-6px) scaleY(.9); transform-origin: top; } }
+
+/* 한계 — 떠나기 전 확인할 것 */
+body[data-theme=travel] .caveat { background: rgba(227,185,85,.08); border-color: var(--brand); }
+body[data-theme=travel] .caveat b { color: var(--brand); }
+body[data-theme=travel] .caveat b::before { content: "🧳 떠나기 전에 · "; }
+body[data-theme=travel] .card:nth-child(2) { animation-delay: .08s; }
+body[data-theme=travel] .card:nth-child(3) { animation-delay: .16s; }
+body[data-theme=travel] .card:nth-child(4) { animation-delay: .24s; }
+body[data-theme=travel] .card:nth-child(5) { animation-delay: .32s; }
+@keyframes land { from { opacity: 0; transform: translate(-24px, -10px); } }
+
+/* 시작 화면의 출국 카드 — 이모지만 살짝 떠 있다 */
+.tcard[data-topic=outbound] .temoji { animation: bob 2.4s ease-in-out infinite; }

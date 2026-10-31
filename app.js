@@ -65,8 +65,12 @@ function directionOf(q, mine) {
   return d > 0 ? "높게" : "낮게";
 }
 
+/* 주제별 꾸밈. 문항·결과 화면에만 씌우고, 목록에 없는 주제는 기본 화면 그대로 */
+const THEMES = { outbound: "travel" };
+
 function show(name) {
   Object.entries(views).forEach(([k, el]) => (el.hidden = k !== name));
+  document.body.dataset.theme = name !== "home" && PACK ? THEMES[PACK.id] || "" : "";
   window.scrollTo({ top: 0 });
 }
 
@@ -106,6 +110,7 @@ function renderGrid() {
   INDEX.topics.forEach((t) => {
     const b = document.createElement("button");
     b.className = "tcard" + (t.id in done ? " done" : "");
+    b.dataset.topic = t.id;
     b.innerHTML =
       `<span class="temoji">${t.emoji}</span>` +
       `<span class="ttitle">${t.title}</span>` +
