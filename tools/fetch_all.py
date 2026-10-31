@@ -137,6 +137,17 @@ SOURCES: list[tuple[str, str, str]] = [
     ("immigration_monthly_2025-12.hwp",
      "출입국·외국인정책 통계월보 2025년 12월호 책자 (법무부 출입국·외국인정책본부)",
      "https://immigration.go.kr/bbs/immigration/227/489822/download.do"),
+
+    # 월보의 도착지별 '월별' 표는 최근 4개월만 싣는다. 4월호(1~4월) · 8월호(5~8월) ·
+    # 12월호(9~12월)를 합쳐야 1~12월이 된다
+    ("immigration_monthly_2025-04.hwp",
+     "출입국·외국인정책 통계월보 2025년 4월호 책자 (법무부 출입국·외국인정책본부)",
+     "https://immigration.go.kr/bbs/immigration/227/481366/download.do"),
+
+    # 8월호 게시글에는 hwp 가 둘 붙어 있다. 앞의 것(485345)은 오류 페이지만 돌아온다
+    ("immigration_monthly_2025-08.hwp",
+     "출입국·외국인정책 통계월보 2025년 8월호 책자 (법무부 출입국·외국인정책본부)",
+     "https://immigration.go.kr/bbs/immigration/227/486563/download.do"),
 ]
 
 

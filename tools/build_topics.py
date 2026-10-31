@@ -723,18 +723,21 @@ topic(
 #   · 법무부 통계월보 2025년 12월호(hwp) — 12월 출국자, 도착지별 표
 # 두 원본은 세는 범위가 다르다. 2025년 11월이 CSV 2,321,587명 · 월보 2,469,876명.
 # 문항 1은 CSV 1~11월과 월보 12월을 섞어 비교한다 (사용자가 정한 방법).
-# 월보의 도착지별 '월별' 표는 최근 4개월(9~12월)만 실린다. 그래서 문항 4·5는 9~12월만 센다.
+# 월보의 도착지별 '월별' 표는 최근 4개월만 실린다. 4월호(1~4월) · 8월호(5~8월) ·
+# 12월호(9~12월)를 합쳐 문항 4·5를 1~12월로 센다.
 _ob = list(csv.DictReader(io.open(RAW / "kor_outbound_2022-07_2025-11.csv",
                                   encoding="cp949")))
 OB_CSV = {int(r["기준월"]): sum(int(v) for k, v in r.items()
                               if k not in ("기준년", "기준월"))
           for r in _ob if r["기준년"] == "2025"}
 
-MB = hwp_paragraphs(RAW / "immigration_monthly_2025-12.hwp")
+MB_ALL = {m: hwp_paragraphs(RAW / f"immigration_monthly_2025-{m:02d}.hwp")
+          for m in (4, 8, 12)}
+MB = MB_ALL[12]
 _NUM = re.compile(r"-?[\d,]+(\.\d+)?%|-?[\d,]+|-")
 
 
-def mb_table(title, ncols):
+def mb_table(title, ncols, MB=MB):
     """월보에서 제목 줄 다음 표를 {행 이름: [값...]} 으로 읽는다.
 
     hwp 표는 칸 하나가 한 문단으로 나온다. 숫자가 아닌 줄을 행 이름으로 모으고
@@ -763,11 +766,17 @@ def mb_table(title, ncols):
     return head, rows
 
 
-# 월별 표 칸: 앞 4칸이 머리글의 ’25년 N월, 그 뒤는 전월 대비 · ’24년 12월 · 전년 대비
-_mh, OB_M = mb_table("도착지별 내국인 출국자 현황(월별)", 7)
-OB_MONTHS = [int(m) for s in _mh for m in re.findall(r"’25년 (\d+)월", s)]
-assert len(OB_MONTHS) == 4, f"월별 표 머리글이 예상과 다릅니다: {_mh}"
-by_month_dest = {d: dict(zip(OB_MONTHS, v[:4])) for d, v in OB_M.items()}
+# 월별 표 칸: 앞 4칸이 머리글의 ’25년 N월, 그 뒤는 전월 대비 · 전년 동월 · 전년 대비.
+# 따로 나오는 나라는 월보마다 다르다 (상위만 싣고 나머지는 '기타'). 나온 달만 값이 있다
+by_month_dest = {}
+for _mb in MB_ALL.values():
+    _mh, _rows = mb_table("도착지별 내국인 출국자 현황(월별)", 7, _mb)
+    _months = [int(m) for s in _mh for m in re.findall(r"’25년 (\d+)월", s)]
+    assert len(_months) == 4, f"월별 표 머리글이 예상과 다릅니다: {_mh}"
+    for d, v in _rows.items():
+        by_month_dest.setdefault(d, {}).update(zip(_months, v[:4]))
+OB_MONTHS = sorted(by_month_dest["총 계"])
+assert OB_MONTHS == list(range(1, 13)), f"빠진 달이 있습니다: {OB_MONTHS}"
 
 # 연도별 표 칸: 2021 · 2022 · 2023 · 2024 · ’24년 1~12월 · ’25년 1~12월 · 전년 대비
 _yh, OB_Y = mb_table("도착지별 내국인 출국자 현황(연도별)", 7)
@@ -789,14 +798,35 @@ ob_top3 = [d for d, _ in ob_rank[:3]]
 top3_opts = ["일본·베트남·중국", "일본·중국·미국", "일본·베트남·태국", "중국·일본·필리핀"]
 top3_ans = next(o for o in top3_opts if set(o.split("·")) == set(ob_top3))
 
-# 문항 4·5 — 월보 표에 따로 나온 나라만 더한다. '기타'에 묶인 나라는 셀 수 없다
-EUROPE = ("독일", "프랑스", "이탈리아", "스페인", "영국", "체코", "튀르키예")
-SEA = ("베트남", "태국", "필리핀", "인도네시아", "싱가포르", "말레이시아", "라오스")
-eu_m = {m: sum(by_month_dest[c][m] for c in EUROPE) for m in OB_MONTHS}
-sea_m = {m: sum(by_month_dest[c][m] for c in SEA) for m in OB_MONTHS}
+# 문항 4·5 — 그 달 월보에 따로 나온 나라 중 유럽 · 동남아에 드는 나라를 모두 더한다.
+# '기타'에 묶인 나라는 셀 수 없다. 튀르키예는 유럽에 넣는다 (사용자가 정한 방법).
+# 표에 새 이름이 나오면 어느 쪽인지 사람이 정해야 하므로, 모르는 이름은 멈춘다
+EUROPE = {"독일", "프랑스", "이탈리아", "스페인", "영국", "체코", "튀르키예", "네덜란드"}
+SEA = {"베트남", "태국", "필리핀", "인도네시아", "싱가포르", "말레이시아", "라오스",
+       "캄보디아"}
+NEITHER = {"총 계", "기타", "일본", "중국", "미국", "괌", "호주", "캐나다", "몽골",
+           "뉴질랜드", "아랍에미리트 연합", "아랍에미리트연합"}
+_unknown = {d for d in by_month_dest
+            if d not in EUROPE | SEA | NEITHER and not d.startswith("(")}
+assert not _unknown, f"유럽·동남아 여부를 정하지 않은 나라가 있습니다: {_unknown}"
+eu_m = {m: sum(v.get(m, 0) for d, v in by_month_dest.items() if d in EUROPE)
+        for m in OB_MONTHS}
+sea_m = {m: sum(v.get(m, 0) for d, v in by_month_dest.items() if d in SEA)
+         for m in OB_MONTHS}
 eu_peak = max(eu_m, key=eu_m.get)
 sea_peak = max(sea_m, key=sea_m.get)
 mlist = f"{OB_MONTHS[0]}~{OB_MONTHS[-1]}월"
+
+
+def listed(region, m):
+    """그 달 표에 따로 나와서 더한 나라들."""
+    return [d for d, v in by_month_dest.items() if d in region and m in v]
+
+
+def partial(region):
+    """일부 달에만 따로 나온 나라 — 나머지 달에는 '기타'에 묶여 빠졌다."""
+    return sorted(d for d, v in by_month_dest.items()
+                  if d in region and len(v) < len(OB_MONTHS))
 
 topic(
     "outbound", "✈️", "2025년, 어디로 떠났나",
@@ -826,23 +856,27 @@ topic(
                "멀리 가는 여행이 기억에 남지만, 숫자는 가까운 나라가 채웁니다."),
         choice("o4", f"2025년 {mlist} 중 유럽으로 가장 출국이 많았던 달은?",
                [f"{m}월" for m in OB_MONTHS], f"{eu_peak}월",
-               f"법무부 통계월보 2025년 12월호의 {mlist} 내국인 출국자 중 항공기 최초 "
-               f"도착지가 {'·'.join(EUROPE)}인 사람을 달마다 더하면 "
-               + " · ".join(f"{m}월 {eu_m[m]:,}" for m in OB_MONTHS),
-               "긴 연휴가 있는 달이 가장 많을 것 같지만, 먼 곳은 날씨가 좋은 철에 "
-               "몰리기도 합니다."),
+               f"법무부 통계월보 2025년 4월호·8월호·12월호의 {mlist} 내국인 출국자 중 "
+               f"항공기 최초 도착지가 그 달 표에 따로 나온 유럽 나라"
+               f"({'·'.join(sorted(set().union(*(listed(EUROPE, m) for m in OB_MONTHS))))})"
+               f"인 사람을 달마다 더하면 {eu_peak}월이 {eu_m[eu_peak]:,}명으로 가장 많습니다",
+               "긴 연휴가 있는 달이 가장 많을 것 같지만, 먼 나라로 떠나는 시기는 "
+               "연휴 달력과 다를 수 있습니다."),
         choice("o5", f"2025년 {mlist} 중 동남아로 가장 출국이 많았던 달은?",
                [f"{m}월" for m in OB_MONTHS], f"{sea_peak}월",
-               f"법무부 통계월보 2025년 12월호의 {mlist} 내국인 출국자 중 항공기 최초 "
-               f"도착지가 {'·'.join(SEA)}인 사람을 달마다 더하면 "
-               + " · ".join(f"{m}월 {sea_m[m]:,}" for m in OB_MONTHS),
-               "동남아는 한국이 추울 때 따뜻한 곳을 찾아 떠나는 사람이 많습니다."),
+               f"법무부 통계월보 2025년 4월호·8월호·12월호의 {mlist} 내국인 출국자 중 "
+               f"항공기 최초 도착지가 그 달 표에 따로 나온 동남아 나라"
+               f"({'·'.join(sorted(set().union(*(listed(SEA, m) for m in OB_MONTHS))))})"
+               f"인 사람을 달마다 더하면 {sea_peak}월이 {sea_m[sea_peak]:,}명으로 가장 많습니다",
+               "여름휴가철이 가장 붐빌 것 같지만, 동남아는 한국이 추운 철에 찾는 "
+               "사람도 많습니다."),
     ],
     caveat="1~11월(공공데이터포털)과 12월(통계월보)은 세는 범위가 달라 같은 달도 "
            f"값이 다릅니다. 예컨대 11월은 {OB_CSV[11]:,}명과 "
            f"{by_month_dest['총 계'][11]:,}명입니다. 나라는 항공기의 최초 도착지로 "
-           "세므로 경유지를 거치면 경유지 나라로 잡힙니다. 유럽·동남아는 월보에 따로 "
-           f"나온 나라만 더했고, 달별 나라 표는 {mlist}만 실려 있어 그 넉 달만 비교했습니다.")
+           "세므로 경유지를 거치면 경유지 나라로 잡힙니다. 월보는 상위 나라만 따로 싣고 "
+           "나머지는 '기타'로 묶어서, 유럽·동남아는 그 달 표에 따로 나온 나라만 더했습니다 "
+           f"(일부 달에만 나온 나라: {'·'.join(partial(EUROPE) + partial(SEA))}).")
 
 
 # ════════════════════════════════════════════════════════════════
