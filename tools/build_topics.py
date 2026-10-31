@@ -738,16 +738,17 @@ _NUM = re.compile(r"-?[\d,]+(\.\d+)?%|-?[\d,]+|-")
 
 
 def mb_table(title, ncols, MB=MB):
-    """월보에서 제목 줄 다음 표를 {행 이름: [값...]} 으로 읽는다.
+    """월보에서 제목 줄 다음 표를 [(행 이름, [값...]), ...] 으로 읽는다.
 
     hwp 표는 칸 하나가 한 문단으로 나온다. 숫자가 아닌 줄을 행 이름으로 모으고
     ('아랍에미리트' + '연합'처럼 이름이 두 줄일 때가 있다), 숫자 ncols 개가 차면
     한 행으로 묶는다. '-'는 0 이다. 머리글은 따로 돌려준다.
+    같은 이름의 행이 두 번 나오는 표가 있어서(국민·외국인 아래의 '승객') 순서대로 둔다.
     """
     i = next(k for k, s in enumerate(MB) if title in s)
     start = next(k for k in range(i, len(MB)) if MB[k].replace(" ", "") == "총계")
     head = [s.strip() for s in MB[i + 1:start] if s.strip()]
-    rows, name, vals = {}, [], []
+    rows, name, vals = [], [], []
     for s in MB[start:]:
         s = s.strip()
         if s.startswith("○"):
@@ -761,7 +762,7 @@ def mb_table(title, ncols, MB=MB):
             assert not vals, f"{title}: '{s}' 앞에서 행이 끊겼습니다"
             name.append(s)
         if len(vals) == ncols:
-            rows[re.sub(r"\s+", " ", " ".join(name))] = vals
+            rows.append((re.sub(r"\s+", " ", " ".join(name)), vals))
             name, vals = [], []
     return head, rows
 
@@ -773,7 +774,7 @@ for _mb in MB_ALL.values():
     _mh, _rows = mb_table("도착지별 내국인 출국자 현황(월별)", 7, _mb)
     _months = [int(m) for s in _mh for m in re.findall(r"’25년 (\d+)월", s)]
     assert len(_months) == 4, f"월별 표 머리글이 예상과 다릅니다: {_mh}"
-    for d, v in _rows.items():
+    for d, v in _rows:
         by_month_dest.setdefault(d, {}).update(zip(_months, v[:4]))
 OB_MONTHS = sorted(by_month_dest["총 계"])
 assert OB_MONTHS == list(range(1, 13)), f"빠진 달이 있습니다: {OB_MONTHS}"
@@ -781,11 +782,22 @@ assert OB_MONTHS == list(range(1, 13)), f"빠진 달이 있습니다: {OB_MONTHS
 # 연도별 표 칸: 2021 · 2022 · 2023 · 2024 · ’24년 1~12월 · ’25년 1~12월 · 전년 대비
 _yh, OB_Y = mb_table("도착지별 내국인 출국자 현황(연도별)", 7)
 assert "’25년" in _yh, f"연도별 표 머리글이 예상과 다릅니다: {_yh}"
-y25 = {d: v[5] for d, v in OB_Y.items()}
+y25 = {d: v[5] for d, v in OB_Y}
 
-# 문항 1 — CSV 1~11월 + 월보 12월
+# 월보의 '국민 출국자'는 승객 + 승무원이다. 도착지별 표의 총계도 이 값이다.
+# CSV 는 승객만 센다 — 2024년 12월 CSV 값이 월보의 '승객' 줄과 정확히 같다.
+# 12월호 당월 표 칸: 2024년 12월 출입국자 · 입국자 · 출국자, 2025년 12월 같은 순서
+_ch, _cur = mb_table("12월 출입국자 현황(당월)", 6)
+assert "2025년 12월" in _ch, f"당월 표 머리글이 예상과 다릅니다: {_ch}"
+_k = next(k for k, (d, _) in enumerate(_cur) if d == "국민 소계")
+(_n1, kor_all), (_n2, kor_pax), (_n3, kor_crew) = _cur[_k:_k + 3]
+assert (_n2, _n3) == ("승객", "승무원"), f"국민 아래 행이 예상과 다릅니다: {_n2}, {_n3}"
+assert kor_pax[5] + kor_crew[5] == kor_all[5] == by_month_dest["총 계"][12]
+DEC_PAX, DEC_CREW = kor_pax[5], kor_crew[5]
+
+# 문항 1 — CSV 1~11월 + 월보 12월. 12월도 CSV 와 같게 승객만 센다
 ob_total = dict(OB_CSV)
-ob_total[12] = by_month_dest["총 계"][12]
+ob_total[12] = DEC_PAX
 assert sorted(ob_total) == list(range(1, 13)), f"빠진 달이 있습니다: {sorted(ob_total)}"
 ob_peak = max(ob_total, key=ob_total.get)
 
@@ -836,47 +848,53 @@ topic(
     [
         choice("o1", "2025년 내국인 해외 출국이 가장 많은달은?",
                ["1월", "8월", "10월", "12월"], f"{ob_peak}월",
-               f"2025년 1~11월은 공공데이터포털 국민(승객) 출국자, 12월은 법무부 통계월보의 "
-               f"국민 출국자를 달마다 더해 비교하면 {ob_peak}월이 "
+               f"2025년 1~11월은 공공데이터포털, 12월은 법무부 통계월보 12월호에서 승무원을 "
+               f"뺀 국민(승객) 출국자를 달마다 비교하면 {ob_peak}월이 "
                f"{ob_total[ob_peak]:,}명으로 가장 많습니다 "
                f"(8월 {ob_total[8]:,} · 10월 {ob_total[10]:,} · 12월 {ob_total[12]:,})",
                "해외여행 하면 여름휴가가 먼저 떠오르지만, 출국자 수는 겨울방학과 "
                "명절 연휴가 낀 달에 몰립니다."),
         choice("o2", "어느 나라로 가장 출국을 많이했는지?",
                ["일본", "베트남", "중국", "미국"], ob_rank[0][0],
-               f"법무부 통계월보 2025년 12월호의 2025년 1~12월 내국인 출국자를 항공기 "
-               f"최초 도착지 나라별로 세면 {ob_rank[0][0]} {ob_rank[0][1]:,}명이 1위입니다",
+               f"법무부 통계월보 2025년 12월호의 2025년 1~12월 내국인 출국자(승무원 포함)를 "
+               f"항공기 최초 도착지 나라별로 세면 {ob_rank[0][0]} {ob_rank[0][1]:,}명이 1위입니다",
                "가깝고 자주 가는 나라는 한 번에 머무는 기간이 짧아서, 횟수로 세면 "
                "차이가 더 크게 벌어집니다."),
         choice("o3", "출국을 많이한 상위 3개 국가는 어디인지?",
                top3_opts, top3_ans,
-               f"법무부 통계월보 2025년 12월호의 2025년 1~12월 내국인 출국자를 항공기 "
-               f"최초 도착지 나라별로 세어 많은 순으로 세 나라를 꼽으면 "
+               f"법무부 통계월보 2025년 12월호의 2025년 1~12월 내국인 출국자(승무원 포함)를 "
+               f"항공기 최초 도착지 나라별로 세어 많은 순으로 세 나라를 꼽으면 "
                + " · ".join(f"{d} {n:,}명" for d, n in ob_rank[:3]),
                "멀리 가는 여행이 기억에 남지만, 숫자는 가까운 나라가 채웁니다."),
         choice("o4", f"2025년 {mlist} 중 유럽으로 가장 출국이 많았던 달은?",
                [f"{m}월" for m in OB_MONTHS], f"{eu_peak}월",
-               f"법무부 통계월보 2025년 4월호·8월호·12월호의 {mlist} 내국인 출국자 중 "
-               f"항공기 최초 도착지가 그 달 표에 따로 나온 유럽 나라"
+               f"법무부 통계월보 2025년 4월호·8월호·12월호의 {mlist} 내국인 출국자(승무원 "
+               f"포함) 중 항공기 최초 도착지가 그 달 표에 따로 나온 유럽 나라"
                f"({'·'.join(sorted(set().union(*(listed(EUROPE, m) for m in OB_MONTHS))))})"
                f"인 사람을 달마다 더하면 {eu_peak}월이 {eu_m[eu_peak]:,}명으로 가장 많습니다",
                "긴 연휴가 있는 달이 가장 많을 것 같지만, 먼 나라로 떠나는 시기는 "
                "연휴 달력과 다를 수 있습니다."),
         choice("o5", f"2025년 {mlist} 중 동남아로 가장 출국이 많았던 달은?",
                [f"{m}월" for m in OB_MONTHS], f"{sea_peak}월",
-               f"법무부 통계월보 2025년 4월호·8월호·12월호의 {mlist} 내국인 출국자 중 "
-               f"항공기 최초 도착지가 그 달 표에 따로 나온 동남아 나라"
+               f"법무부 통계월보 2025년 4월호·8월호·12월호의 {mlist} 내국인 출국자(승무원 "
+               f"포함) 중 항공기 최초 도착지가 그 달 표에 따로 나온 동남아 나라"
                f"({'·'.join(sorted(set().union(*(listed(SEA, m) for m in OB_MONTHS))))})"
                f"인 사람을 달마다 더하면 {sea_peak}월이 {sea_m[sea_peak]:,}명으로 가장 많습니다",
                "여름휴가철이 가장 붐빌 것 같지만, 동남아는 한국이 추운 철에 찾는 "
                "사람도 많습니다."),
     ],
-    caveat="1~11월(공공데이터포털)과 12월(통계월보)은 세는 범위가 달라 같은 달도 "
-           f"값이 다릅니다. 예컨대 11월은 {OB_CSV[11]:,}명과 "
-           f"{by_month_dest['총 계'][11]:,}명입니다. 나라는 항공기의 최초 도착지로 "
-           "세므로 경유지를 거치면 경유지 나라로 잡힙니다. 월보는 상위 나라만 따로 싣고 "
+    caveat="출국자 수는 사람 수가 아니라 출국 횟수입니다. 달별 비교(1번)는 승객만 "
+           "셌고, 나라별 숫자(2~5번)는 월보 도착지별 표에 승객만 값이 없어 승무원이 "
+           f"들어 있습니다 (12월 승객 {DEC_PAX:,}명 · 승무원 {DEC_CREW:,}명). 나라는 "
+           "항공기의 최초 도착지로 세므로 경유지를 거치면 경유지 나라로 잡힙니다. "
+           "월보는 상위 나라만 따로 싣고 "
            "나머지는 '기타'로 묶어서, 유럽·동남아는 그 달 표에 따로 나온 나라만 더했습니다 "
-           f"(일부 달에만 나온 나라: {'·'.join(partial(EUROPE) + partial(SEA))}).")
+           f"(일부 달에만 나온 나라: {'·'.join(partial(EUROPE) + partial(SEA))}). "
+           f"같은 2025년 11월 국민 출국자가 승객만 센 공공데이터포털에서는 "
+           f"{OB_CSV[11]:,}명, 승무원까지 센 통계월보에서는 "
+           f"{by_month_dest['총 계'][11]:,}명이듯, 승무원을 넣었는지와 나라를 실제 "
+           "목적지가 아닌 항공기 최초 도착지로 셌는지에 따라 다른 곳에서 본 숫자와 "
+           "다를 수 있습니다.")
 
 
 # ════════════════════════════════════════════════════════════════
