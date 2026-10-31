@@ -15,11 +15,14 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import sys
 import datetime as dt
 from collections import Counter
 from pathlib import Path
 from statistics import mean
+
+from hwp_text import hwp_paragraphs
 
 # 윈도우 콘솔(cp949)은 이모지 · 기호를 못 찍고 멈춘다. 출력만 UTF-8 로 맞춘다
 try:
@@ -714,20 +717,155 @@ topic(
            "다르게 나옵니다. 여기서 '강설량'은 하루 동안 내린 눈의 양으로, "
            "쌓여 있는 눈의 깊이(적설)와는 다릅니다.")
 
+# ── 12. 해외 출국 ────────────────────────────────────────────────
+# 원본이 둘이다.
+#   · 공공데이터포털 CSV — 2025년 1~11월 국민(승객) 출국자, 월별·연령별
+#   · 법무부 통계월보 2025년 12월호(hwp) — 12월 출국자, 도착지별 표
+# 두 원본은 세는 범위가 다르다. 2025년 11월이 CSV 2,321,587명 · 월보 2,469,876명.
+# 문항 1은 CSV 1~11월과 월보 12월을 섞어 비교한다 (사용자가 정한 방법).
+# 월보의 도착지별 '월별' 표는 최근 4개월(9~12월)만 실린다. 그래서 문항 4·5는 9~12월만 센다.
+_ob = list(csv.DictReader(io.open(RAW / "kor_outbound_2022-07_2025-11.csv",
+                                  encoding="cp949")))
+OB_CSV = {int(r["기준월"]): sum(int(v) for k, v in r.items()
+                              if k not in ("기준년", "기준월"))
+          for r in _ob if r["기준년"] == "2025"}
+
+MB = hwp_paragraphs(RAW / "immigration_monthly_2025-12.hwp")
+_NUM = re.compile(r"-?[\d,]+(\.\d+)?%|-?[\d,]+|-")
+
+
+def mb_table(title, ncols):
+    """월보에서 제목 줄 다음 표를 {행 이름: [값...]} 으로 읽는다.
+
+    hwp 표는 칸 하나가 한 문단으로 나온다. 숫자가 아닌 줄을 행 이름으로 모으고
+    ('아랍에미리트' + '연합'처럼 이름이 두 줄일 때가 있다), 숫자 ncols 개가 차면
+    한 행으로 묶는다. '-'는 0 이다. 머리글은 따로 돌려준다.
+    """
+    i = next(k for k, s in enumerate(MB) if title in s)
+    start = next(k for k in range(i, len(MB)) if MB[k].replace(" ", "") == "총계")
+    head = [s.strip() for s in MB[i + 1:start] if s.strip()]
+    rows, name, vals = {}, [], []
+    for s in MB[start:]:
+        s = s.strip()
+        if s.startswith("○"):
+            break
+        if not s:
+            continue
+        if _NUM.fullmatch(s):
+            vals.append(0 if s == "-" else float(s[:-1]) if s.endswith("%")
+                        else int(s.replace(",", "")))
+        else:
+            assert not vals, f"{title}: '{s}' 앞에서 행이 끊겼습니다"
+            name.append(s)
+        if len(vals) == ncols:
+            rows[re.sub(r"\s+", " ", " ".join(name))] = vals
+            name, vals = [], []
+    return head, rows
+
+
+# 월별 표 칸: 앞 4칸이 머리글의 ’25년 N월, 그 뒤는 전월 대비 · ’24년 12월 · 전년 대비
+_mh, OB_M = mb_table("도착지별 내국인 출국자 현황(월별)", 7)
+OB_MONTHS = [int(m) for s in _mh for m in re.findall(r"’25년 (\d+)월", s)]
+assert len(OB_MONTHS) == 4, f"월별 표 머리글이 예상과 다릅니다: {_mh}"
+by_month_dest = {d: dict(zip(OB_MONTHS, v[:4])) for d, v in OB_M.items()}
+
+# 연도별 표 칸: 2021 · 2022 · 2023 · 2024 · ’24년 1~12월 · ’25년 1~12월 · 전년 대비
+_yh, OB_Y = mb_table("도착지별 내국인 출국자 현황(연도별)", 7)
+assert "’25년" in _yh, f"연도별 표 머리글이 예상과 다릅니다: {_yh}"
+y25 = {d: v[5] for d, v in OB_Y.items()}
+
+# 문항 1 — CSV 1~11월 + 월보 12월
+ob_total = dict(OB_CSV)
+ob_total[12] = by_month_dest["총 계"][12]
+assert sorted(ob_total) == list(range(1, 13)), f"빠진 달이 있습니다: {sorted(ob_total)}"
+ob_peak = max(ob_total, key=ob_total.get)
+
+# 문항 2·3 — 나라 순위. 총계 · 기타는 나라가 아니다. 괄호로 적힌 곳(타이완 · 홍콩 ·
+# 마카오 · 북마리아나 군도)은 월보가 나라가 아닌 지역으로 표시한 것이라 뺀다
+ob_rank = sorted(((d, n) for d, n in y25.items()
+                  if d not in ("총 계", "기타") and not d.startswith("(")),
+                 key=lambda kv: -kv[1])
+ob_top3 = [d for d, _ in ob_rank[:3]]
+top3_opts = ["일본·베트남·중국", "일본·중국·미국", "일본·베트남·태국", "중국·일본·필리핀"]
+top3_ans = next(o for o in top3_opts if set(o.split("·")) == set(ob_top3))
+
+# 문항 4·5 — 월보 표에 따로 나온 나라만 더한다. '기타'에 묶인 나라는 셀 수 없다
+EUROPE = ("독일", "프랑스", "이탈리아", "스페인", "영국", "체코", "튀르키예")
+SEA = ("베트남", "태국", "필리핀", "인도네시아", "싱가포르", "말레이시아", "라오스")
+eu_m = {m: sum(by_month_dest[c][m] for c in EUROPE) for m in OB_MONTHS}
+sea_m = {m: sum(by_month_dest[c][m] for c in SEA) for m in OB_MONTHS}
+eu_peak = max(eu_m, key=eu_m.get)
+sea_peak = max(sea_m, key=sea_m.get)
+mlist = f"{OB_MONTHS[0]}~{OB_MONTHS[-1]}월"
+
+topic(
+    "outbound", "✈️", "2025년, 어디로 떠났나",
+    "2025년 한국인의 해외 출국, 달별 · 나라별",
+    "법무부 (공공데이터포털 · 출입국·외국인정책 통계월보)",
+    "https://www.data.go.kr/data/15103565/fileData.do",
+    [
+        choice("o1", "2025년 내국인 해외 출국이 가장 많은달은?",
+               ["1월", "8월", "10월", "12월"], f"{ob_peak}월",
+               f"2025년 1~11월은 공공데이터포털 국민(승객) 출국자, 12월은 법무부 통계월보의 "
+               f"국민 출국자를 달마다 더해 비교하면 {ob_peak}월이 "
+               f"{ob_total[ob_peak]:,}명으로 가장 많습니다 "
+               f"(8월 {ob_total[8]:,} · 10월 {ob_total[10]:,} · 12월 {ob_total[12]:,})",
+               "해외여행 하면 여름휴가가 먼저 떠오르지만, 출국자 수는 겨울방학과 "
+               "명절 연휴가 낀 달에 몰립니다."),
+        choice("o2", "어느 나라로 가장 출국을 많이했는지?",
+               ["일본", "베트남", "중국", "미국"], ob_rank[0][0],
+               f"법무부 통계월보 2025년 12월호의 2025년 1~12월 내국인 출국자를 항공기 "
+               f"최초 도착지 나라별로 세면 {ob_rank[0][0]} {ob_rank[0][1]:,}명이 1위입니다",
+               "가깝고 자주 가는 나라는 한 번에 머무는 기간이 짧아서, 횟수로 세면 "
+               "차이가 더 크게 벌어집니다."),
+        choice("o3", "출국을 많이한 상위 3개 국가는 어디인지?",
+               top3_opts, top3_ans,
+               f"법무부 통계월보 2025년 12월호의 2025년 1~12월 내국인 출국자를 항공기 "
+               f"최초 도착지 나라별로 세어 많은 순으로 세 나라를 꼽으면 "
+               + " · ".join(f"{d} {n:,}명" for d, n in ob_rank[:3]),
+               "멀리 가는 여행이 기억에 남지만, 숫자는 가까운 나라가 채웁니다."),
+        choice("o4", f"2025년 {mlist} 중 유럽으로 가장 출국이 많았던 달은?",
+               [f"{m}월" for m in OB_MONTHS], f"{eu_peak}월",
+               f"법무부 통계월보 2025년 12월호의 {mlist} 내국인 출국자 중 항공기 최초 "
+               f"도착지가 {'·'.join(EUROPE)}인 사람을 달마다 더하면 "
+               + " · ".join(f"{m}월 {eu_m[m]:,}" for m in OB_MONTHS),
+               "긴 연휴가 있는 달이 가장 많을 것 같지만, 먼 곳은 날씨가 좋은 철에 "
+               "몰리기도 합니다."),
+        choice("o5", f"2025년 {mlist} 중 동남아로 가장 출국이 많았던 달은?",
+               [f"{m}월" for m in OB_MONTHS], f"{sea_peak}월",
+               f"법무부 통계월보 2025년 12월호의 {mlist} 내국인 출국자 중 항공기 최초 "
+               f"도착지가 {'·'.join(SEA)}인 사람을 달마다 더하면 "
+               + " · ".join(f"{m}월 {sea_m[m]:,}" for m in OB_MONTHS),
+               "동남아는 한국이 추울 때 따뜻한 곳을 찾아 떠나는 사람이 많습니다."),
+    ],
+    caveat="1~11월(공공데이터포털)과 12월(통계월보)은 세는 범위가 달라 같은 달도 "
+           f"값이 다릅니다. 예컨대 11월은 {OB_CSV[11]:,}명과 "
+           f"{by_month_dest['총 계'][11]:,}명입니다. 나라는 항공기의 최초 도착지로 "
+           "세므로 경유지를 거치면 경유지 나라로 잡힙니다. 유럽·동남아는 월보에 따로 "
+           f"나온 나라만 더했고, 달별 나라 표는 {mlist}만 실려 있어 그 넉 달만 비교했습니다.")
+
 
 # ════════════════════════════════════════════════════════════════
 def main() -> None:
+    # 주제 id 를 주면 그 주제만 쓴다 (python tools/build_topics.py outbound).
+    # 원본을 다시 받으면 다른 주제의 값도 바뀔 수 있다 — 내 주제만 고칠 때 남의 문항
+    # 파일을 덮어쓰지 않게 한다
+    only = set(sys.argv[1:])
+    unknown = only - {t["id"] for t in TOPICS}
+    assert not unknown, f"없는 주제입니다: {unknown}"
+    targets = [t for t in TOPICS if not only or t["id"] in only]
+
     OUT.mkdir(parents=True, exist_ok=True)
-    index = []
-    for t in TOPICS:
+    fresh = {}
+    for t in targets:
         assert len(t["questions"]) == 5, f"{t['id']}: 문항이 5개가 아닙니다"
         pack = {k: t[k] for k in ("id", "emoji", "title", "blurb",
                                   "source", "source_url", "caveat")}
         pack["questions"] = t["questions"]
         io.open(OUT / f"{t['id']}.json", "w", encoding="utf-8").write(
             json.dumps(pack, ensure_ascii=False, indent=2))
-        index.append({k: t[k] for k in ("id", "emoji", "title", "blurb",
-                                        "source")})
+        fresh[t["id"]] = {k: t[k] for k in ("id", "emoji", "title", "blurb",
+                                            "source")}
 
     # 제목·부제는 화면을 바꾸며 고친 값을 지킨다 (2장에서 내 제목으로 바꾼다).
     # 다시 계산해도 내 제목이 «감 테스트»로 돌아가지 않게, 있던 값을 읽어 쓴다
@@ -737,6 +875,12 @@ def main() -> None:
             old = json.load(io.open(APP / "topics.json", encoding="utf-8"))
         except ValueError:
             old = {}
+    if only:
+        # 있던 목록은 그대로 두고, 고른 주제만 바꾸거나 끝에 더한다
+        index = [fresh.pop(x["id"], x) for x in old.get("topics", [])]
+        index += fresh.values()
+    else:
+        index = list(fresh.values())
     io.open(APP / "topics.json", "w", encoding="utf-8").write(json.dumps({
         "title": old.get("title", "감 테스트"),
         "subtitle": old.get("subtitle", "숫자에 대한 당신의 감은 몇 점입니까"),
@@ -758,10 +902,14 @@ def main() -> None:
         "topics": index,
     }, ensure_ascii=False, indent=2))
 
-    # 사람이 읽는 정답지
-    md = ["# 문항 정답지 — 10주제 50문항", "",
+    # 사람이 읽는 정답지 — 목록 순서대로, 디스크에 쓰인 문항 파일에서 만든다.
+    # 고른 주제만 썼을 때도 다른 주제는 있던 파일 그대로 들어간다
+    packs = [json.load(io.open(OUT / f"{x['id']}.json", encoding="utf-8"))
+             for x in index]
+    md = [f"# 문항 정답지 — {len(packs)}주제 "
+          f"{sum(len(t['questions']) for t in packs)}문항", "",
           "> 모든 값은 `data/raw/` 의 원본에서 `tools/build_topics.py` 가 계산합니다.", ""]
-    for t in TOPICS:
+    for t in packs:
         md += [f"## {t['emoji']} {t['title']}", "",
                f"- 출처: {t['source']} · {t['source_url']}"]
         if t["caveat"]:
@@ -775,8 +923,8 @@ def main() -> None:
                    f"- 왜 틀리나 {q['why']}", ""]
     io.open(HERE / "정답지.md", "w", encoding="utf-8").write("\n".join(md))
 
-    print(f"주제 {len(TOPICS)}개 · 문항 {sum(len(t['questions']) for t in TOPICS)}개")
-    for t in TOPICS:
+    print(f"주제 {len(targets)}개 · 문항 {sum(len(t['questions']) for t in targets)}개")
+    for t in targets:
         print(f"\n{t['emoji']} {t['title']}  ({t['source']})")
         for q in t["questions"]:
             a = f"{q['answer']}{q.get('unit', '')}" if q["type"] == "slider" \
