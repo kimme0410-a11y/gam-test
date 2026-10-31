@@ -124,6 +124,19 @@ SOURCES: list[tuple[str, str, str]] = [
      "&start_date=1990-01-01&end_date=2024-12-31"
      "&daily=snowfall_sum,temperature_2m_min"
      "&timezone=Asia%2FSeoul" + ERA5),
+
+    # 공공데이터포털 파일은 atchFileId 로 받는다. 법무부가 새 파일을 올리면(다음 예정 2027-01)
+    # 이 번호가 바뀐다 — 번호를 못 박아 두어야 다시 받아도 같은 파일이 온다.
+    # 파일 인코딩은 cp949 다.
+    ("kor_outbound_2022-07_2025-11.csv",
+     "월별·연령별 국민(승객) 출국자 2022.7~2025.11 (법무부 · 공공데이터포털 15103565)",
+     "https://www.data.go.kr/cmm/cmm/fileDownload.do"
+     "?atchFileId=FILE_000000003576655&fileDetailSn=1"),
+
+    # 12월 국민 출국자는 월보 책자(hwp)에만 있다. 같이 붙은 엑셀 둘은 외국인 통계다
+    ("immigration_monthly_2025-12.hwp",
+     "출입국·외국인정책 통계월보 2025년 12월호 책자 (법무부 출입국·외국인정책본부)",
+     "https://immigration.go.kr/bbs/immigration/227/489822/download.do"),
 ]
 
 
